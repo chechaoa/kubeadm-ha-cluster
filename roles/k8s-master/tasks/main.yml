@@ -1,0 +1,72 @@
+- stat: path=/etc/kubernetes/admin.conf
+  register: kubeadm_conf
+
+- name: Install rsync
+  yum:
+    name: rsync
+
+- name: copy master configs
+  synchronize:
+    src: "/etc/kubernetes"
+    dest: /tmp/
+    delete: yes
+    recursive: yes
+    mode: pull
+  delegate_to: localhost
+  when: groups['k8s-masters'][0] == inventory_hostname and groups['k8s-masters'] | length > 1
+
+- name: deploy master configs
+  become: yes
+  copy:
+    src: "/tmp/kubernetes"
+    dest: "/etc/"
+    owner: root
+    group: root
+  when: groups['k8s-masters'][0] != inventory_hostname and groups['k8s-masters'] | length > 1
+
+- name: deploy master of master
+  include: master.yaml
+  when: groups['k8s-masters'][0] == inventory_hostname and not kubeadm_conf.stat.exists
+
+#- name: copy kubelet config to current user
+#  become: yes
+#  copy:
+#    src: /etc/kubernetes/kubelet.conf
+#    dest: /home/{{ansible_user}}/admin.conf
+#    owner: "{{ansible_user}}"
+#    group: "{{ansible_user}}"
+#    remote_src: true
+#  when: groups['k8s-masters'][0] != inventory_hostname
+
+#- name: export KUBECONFIG ~/.bash_profile
+#  lineinfile: 
+#    dest: ~/.bash_profile
+#    line: "export KUBECONFIG=/etc/kubernetes/admin.conf"
+#    state: present
+
+- name: fix api config
+  become: yes
+  replace: 
+    path: /etc/kubernetes/manifests/kube-apiserver.yaml
+    regexp: '--advertise-address=(.+)'
+    replace: '--advertise-address={{ansible_host}}'
+  when: groups['k8s-masters'][0] != inventory_hostname and groups['k8s-masters'] | length > 1
+
+- name: update service-node-port-range
+  shell: sed -i 's/^\ \ \ \ -\ kube-apiserver/&\n\ \ \ \ -\ --service-node-port-range=30000-65000/' /etc/kubernetes/manifests/kube-apiserver.yaml
+
+#- name: fix k8s config
+#  become: yes
+#  replace: 
+#    path: "{{item}}"
+#    regexp: 'server: https://(.+):6443'
+#    replace: 'server: https://{{ansible_host}}:6443'
+#  with_items:
+#    - /etc/kubernetes/kubelet.conf
+#    - /etc/kubernetes/admin.conf
+#    - /etc/kubernetes/controller-manager.conf
+#    - /etc/kubernetes/scheduler.conf
+#  notify:
+#    - restart docker service
+#    - restart kubelet service
+#  when: groups['k8s-masters'][0] != inventory_hostname and groups['k8s-masters'] | length > 1

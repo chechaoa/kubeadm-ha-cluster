@@ -1,0 +1,76 @@
+- name: deploy kubeadm config
+  template:
+    src: kubeadm-config.yaml
+    dest: /etc/kubernetes/kubeadm-config.yaml
+
+#- name: init kubeadm
+#  become: yes
+#  shell: kubeadm reset && kubeadm init --config=/etc/kubernetes/kubeadm-config.yaml --skip-preflight-checks
+#  register: init_cluster
+
+- name: Kubeadm reset 
+  shell: |
+    kubeadm reset
+    iptables -F && iptables -t nat -F && iptables -t mangle -F && iptables -X
+#    ipvsadm -C 
+#    systemctl restart kubelet
+
+
+- name: rstart kubelet
+  shell: systemctl restart kubelet
+    
+- name: init kubeadm
+  become: yes
+  shell: kubeadm init --config=/etc/kubernetes/kubeadm-config.yaml --skip-preflight-checks
+  register: init_cluster
+
+- name: Create Kubernetes config directory
+  become: false
+  file: path="~/.kube/" state=directory
+
+- name: Create kubeconfig
+  shell: cp "/etc/kubernetes/admin.conf" "$HOME/.kube/config"
+
+- name: Chown .kube/config
+  shell: chown `id -u`:`id -g` "$HOME/.kube/config"
+
+#- name: cp config to user home
+#  shell: |
+#    [[ -d ~/.kube ]] || mkdir -p ~/.kube
+#    /bin/cp /etc/kubernetes/admin.conf ~/.kube/config
+
+- name: Debug kubernetes init output
+  debug: msg={{ init_cluster }}
+
+#- name: fix api config to allow to join another masters
+#  become: yes
+#  replace: 
+#    path: /etc/kubernetes/manifests/kube-apiserver.yaml
+#    regexp: '- --admission-control=Initializers,NamespaceLifecycle,LimitRanger,ServiceAccount,PersistentVolumeLabel,DefaultStorageClass,DefaultTolerationSeconds,NodeRestriction,ResourceQuota'
+#    replace: '- --admission-control=NamespaceLifecycle,LimitRanger,ServiceAccount,DefaultStorageClass,ResourceQuota,DefaultTolerationSeconds'
+#  when: groups['k8s-masters'] | length > 1
+#  notify: 
+#    - restart docker service
+#    - restart kubelet service
+
+- name: ensure docker service is running
+  become: yes
+  service: 
+    name: docker 
+    state: started
+
+- name: ensure kubelet service is running
+  become: yes
+  systemd: 
+    name: kubelet
+    state: started
+
+- name: wait a little
+  wait_for: timeout=60
+  delegate_to: localhost
+
+- name: enable pods on master
+  shell: kubectl taint nodes --all node-role.kubernetes.io/master- 
+  #environment:
+  #  KUBECONFIG: /etc/kubernetes/admin.conf
+    

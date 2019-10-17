@@ -1,0 +1,14 @@
+k8s_token: 'd5018s.0916bdc21fc0dcde'
+service_cidr: "10.10.0.0/16"
+cluser_dns: "10.10.0.10"
+pod_network_cidr: "10.244.0.0/16"
+
+insecure_bind_address: "127.0.0.1"
+insecure_port: "8080"
+token_ttl: 0
+network_zone: "public"
+
+tmp_caicloud: "/tmp/caicloud"
+deb_package_dir: "{{tmp_caicloud}}/deb_package"
+images_file: "{{tmp_caicloud}}/images_file"
+kube_addons_dir: /etc/kubernetes/addons

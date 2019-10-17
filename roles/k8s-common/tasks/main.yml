@@ -1,0 +1,54 @@
+- name: Disable system swap
+  shell: "swapoff -a"
+
+- name: set enforce
+  command: setenforce 0
+
+#- name: Open ports
+#  firewalld:
+#    port: "{{item}}"
+#    permanent: true
+#    state: enabled
+#  with_items:
+#    - 6443/tcp
+#    - 2379-2380/tcp
+#    - 10250/tcp
+#    - 10251/tcp
+#    - 10252/tcp
+#    - 10255/tcp
+#    - 30000-65000/tcp
+
+#- name: Enable IP masquerading
+#  shell: "firewall-cmd --permanent --zone={{ network_zone }} --add-masquerade"
+
+#- name: Reload firewalld
+#  shell: firewall-cmd --reload
+
+- name: Remove current swaps from fstab
+  lineinfile:
+    dest: /etc/fstab
+    regexp: '(?i)^([^#][\S]+\s+(none|swap)\s+swap.*)'
+    line: '# \1'
+    backrefs: yes
+    state: present
+
+- name: Disable swappiness and pass bridged IPv4 traffic to iptable's chains
+  sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    state: present
+  with_items:
+    - { name: 'vm.swappiness', value: '0' }
+    - { name: 'net.bridge.bridge-nf-call-iptables', value: '1' }
+
+- name: Disable IPv6
+  shell: |
+    sysctl -w net.ipv6.conf.all.disable_ipv6=1
+    sysctl -w net.ipv6.conf.default.disable_ipv6=1
+
+
+- name: Base configuration
+  include: common.yml
+
+- name: Install Kubernetes packages
+  include: pkg.yml

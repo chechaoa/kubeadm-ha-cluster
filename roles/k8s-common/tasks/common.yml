@@ -1,0 +1,101 @@
+- name:  Backup old /etc/yum.repos.d
+  when: inventory_hostname != groups['k8s-masters'][0] and ansible_distribution == "CentOS"
+  shell: |
+    (ls -dt /etc/yum.repos.d*|head -n 5; ls -d /etc/yum.repos.d*) | sort | uniq -u | xargs /bin/rm -rf;
+    mv /etc/yum.repos.d{,.`date +"%Y-%m-%d-%H-%M-%S"`.bak} ;
+    mkdir -p /etc/yum.repos.d
+
+- name: Set repo ip address
+  set_fact:
+    repo_ip_address: "{{ hostvars[groups['k8s-masters'][0]]['ansible_host'] }}"
+  when: inventory_hostname != groups['k8s-masters'][0] and ansible_distribution == "CentOS"
+
+- name:  Add Caicloud yum repository
+  template: src=caicloud.repo.j2  dest=/etc/yum.repos.d/caicloud.repo
+  when: inventory_hostname != groups['k8s-masters'][0] and ansible_distribution == "CentOS"
+
+- name: Ensure yum-utils is installed
+  yum:
+    name: yum-utils
+    state: installed
+
+- name: Finds incomplete or aborted yum transactions on a system and attempts to complete them
+  command: yum-complete-transaction --cleanup-only
+
+- name: Install docker for Centos
+  when:  ansible_distribution == "CentOS"
+  yum:
+    disable_gpg_check: no
+    name: docker-engine 
+    state: present 
+  register: install_docker_output
+
+#- debug: msg={{ install_docker_output }}
+
+- name: Create tmp/caicloud directory
+  file: path={{ tmp_caicloud }} state=directory
+
+- name: Create /etc/kubernetes/addons directory
+  file: path={{ kube_addons_dir }} state=directory
+
+- name: Copy docker packages for Kylin
+  when: ansible_distribution == "Kylin" and ansible_architecture == "x86_64"
+  copy:
+    src: docker/
+    dest: "{{ deb_package_dir }}"
+  register: files
+
+- name: Install docker for Kylin
+  when: ansible_distribution == "Kylin" and ansible_architecture == "x86_64" 
+  shell: cd {{ deb_package_dir }} && dpkg -i * 
+
+- name: Copy docker packages  for Kylin(aarch64) 
+  when: ansible_distribution == "Kylin" and ansible_architecture == "aarch64"
+  copy:
+    src: docker_aarch64/
+    dest: "{{ deb_package_dir }}"
+  register: files
+
+- name: create images_file directory
+  file:
+    dest: "{{ images_file }}"
+    state: directory
+
+- name: Install docker  for Kylin(aarch64)
+  when: ansible_distribution == "Kylin" and ansible_architecture == "aarch64"  
+  shell: cd {{ deb_package_dir }} && dpkg -i * 
+
+- name: Copy images tarball for x86_64
+  when: ansible_architecture == "x86_64"
+  copy:
+    src: images/
+    dest: "{{ images_file }}"
+  register: files
+
+
+- name: restart docker
+  systemd: 
+    name: docker 
+    state: restarted
+    daemon_reload: yes
+    enabled: yes
+
+- name: Load images for x86_64
+  when: ansible_architecture == "x86_64"
+  command: docker load -i {{ images_file }}/{{item}}
+  with_items:
+    - kubeadm-images.tar.gz
+  
+
+- name: Copy images tarball for aarch64
+  when: ansible_architecture == "aarch64"
+  copy:
+    src: images_aarch64
+    dest: "{{ images_file }}"
+  register: files
+
+- name: Load images aarch64
+  when: ansible_architecture == "aarch64"
+  command: docker load -i {{ images_file }}/{{item}}
+  with_items:
+    - kubeadm-images.tar.gz

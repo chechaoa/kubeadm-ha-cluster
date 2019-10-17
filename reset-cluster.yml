@@ -1,0 +1,36 @@
+---
+
+- hosts: k8s-cluster
+  tasks:
+    - name: Reset Kubernetes component
+      shell: |
+        kubeadm reset
+        iptables -F && iptables -t nat -F && iptables -t mangle -F && iptables -X
+#        ipvsadm -C
+      ignore_errors: True
+
+    - name: remove docker files
+      shell: |
+        systemctl stop docker
+
+    - name: Remove all files
+      file:
+        state: absent
+        path: "{{ item }}"
+      with_items:
+        - /tmp/caicloud
+        - /tmp/kubernetes
+        - /etc/kubernetes/addons
+        - /etc/kubernetes
+        - /var/lib/kubelet
+        - /var/lib/etcd
+        - /var/lib/etcd-cluster
+        - /var/lib/nginx/nginx.conf
+        - /var/lib/docker/
+      ignore_errors: True 
+
+- hosts: k8s-masters
+  tasks:
+    - name: Remove etcd 
+      command: docker rm -f etcd  nginx-k8s-lb
+      ignore_errors: True 

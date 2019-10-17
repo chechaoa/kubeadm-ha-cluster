@@ -1,0 +1,22 @@
+[all:vars]
+ansible_port=22
+ansible_user=root
+ansible_ssh_pass=caicloud2017
+keepalived_interface=eth0
+
+
+
+[k8s-masters]
+master1 ansible_host=192.168.20.65  
+master2 ansible_host=192.168.20.66 
+master3 ansible_host=192.168.20.67 
+
+[k8s-nodes]
+node1 ansible_host=192.168.20.68
+
+[k8s-cluster:children]
+k8s-masters
+k8s-nodes
+
+[k8s-masters:vars]
+keepalived_virtualip=192.168.17.22

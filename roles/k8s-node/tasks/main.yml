@@ -1,0 +1,3 @@
+- name: join cluster
+  command: kubeadm join --token="{{k8s_token}}" {{hostvars[groups['k8s-masters'][0]]['ansible_host']}}:6443
+  ignore_errors: yes

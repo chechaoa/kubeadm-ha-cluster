@@ -1,0 +1,86 @@
+- name: install kubeadm stuff
+  when:  ansible_distribution  == "CentOS"
+  become: yes
+  yum:
+    name: "{{item}}"
+  with_items:
+    - kubectl
+    - kubelet
+    - kubeadm
+    - kubernetes-cni
+  register: install_k8s_output
+
+#- debug: msg={{ install_k8s_output }}  
+
+- name: copy k8s setup packages  for x86_64
+  when:  ansible_distribution  == "Kylin" and ansible_architecture == "x86_64"
+  copy:
+    src: k8s-x86/
+    dest: "{{ deb_package_dir }}"
+  register: files
+
+- name: copy k8s setup packages for aarch64
+  when:  ansible_distribution  == "Kylin" and ansible_architecture == "x86_64"
+  copy:
+    src: k8s-aarch64/
+    dest: "{{ deb_package_dir }}"
+  register: files
+
+- name: Install kube packages for x86_64
+  when: ansible_distribution == "Kylin" and ansible_architecture == "x86_64"
+  shell: cd {{ deb_package_dir }} && dpkg -i *
+
+- name: Install kube packages for aarch64
+  when: ansible_distribution == "Kylin" and ansible_architecture == "aarch64"
+  shell: cd {{ deb_package_dir }} && dpkg -i *
+
+
+- name: kubeadm completion preps
+  file:
+    path: ~/.kube/
+    state: directory
+    mode: 0755
+    
+- name: kubeadm completion shell
+  shell: kubeadm completion bash > ~/.kube/kubeadm_completion.bash.inc
+  args:
+    warn: no
+
+- name: kubeadm completion to ~/.bash_profile
+  lineinfile:
+    dest: ~/.bash_profile
+    line: '[[ -x ${HOME}/.kube/kubeadm_completion.bash.inc ]] && source ${HOME}/.kube/kubeadm_completion.bash.inc'
+    state: present
+
+- name: Update kubeadm.conf with cgroupfs
+  shell: sed -i "s/cgroup-driver=systemd/cgroup-driver=cgroupfs/g" /etc/systemd/system/kubelet.service.d/10-kubeadm.conf
+
+#- name: Fix RestartSec=1
+#  shell: sed -i "s/RestartSec=10=1/g" /etc/systemd/system/kubelet.service
+
+- name: Update kubeadm.conf with dns
+  shell: sed -i "s/10.96.0.10/{{ cluser_dns }}/g" /etc/systemd/system/kubelet.service.d/10-kubeadm.conf
+
+- name: update kubeadm.conf with system_pods_args
+  shell: sed -i '/Environment=\"KUBELET_SYSTEM_PODS_ARGS/cEnvironment=\"KUBELET_SYSTEM_PODS_ARGS=--pod-manifest-path=/etc/kubernetes/manifests\ --allow-privileged=true\ --fail-swap-on=false\"' /etc/systemd/system/kubelet.service.d/10-kubeadm.conf
+
+- name: kubectl completion shell
+  shell: kubectl completion bash > ~/.kube/completion.bash.inc
+  args:
+    warn: no
+
+- name: enable docker and kubelet
+  shell: |
+    systemctl enable --now docker
+    systemctl enable --now kubelet
+    
+
+- name: restart docker service
+  become: yes
+  service: name=docker state=restarted 
+
+- name: restart kubelet service
+  become: yes
+  systemd: name=kubelet state=restarted daemon_reload=yes
+
+
